@@ -90,20 +90,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ github.ref_name }}"
-          NOTES=$(git log $(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || git rev-list --max-parents=0 HEAD)..HEAD --oneline 2>/dev/null || echo "Release $TAG")
+          PREV=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || git rev-list --max-parents=0 HEAD)
+          git log "${PREV}..HEAD" --oneline > /tmp/changes.txt 2>/dev/null || echo "Release ${TAG}" > /tmp/changes.txt
           gh release create "$TAG" \
-            --title "Aegis-Devin $TAG" \
-            --notes "## Aegis-Devin $TAG
-
-AI-driven autonomous penetration testing + network forensics platform.
-
-### Install
-\`\`\`bash
-pip install aegis-devin
-\`\`\`
-
-### Changes
-$NOTES" \
+            --title "Aegis-Devin ${TAG}" \
+            --notes-file /tmp/changes.txt \
             --latest
 
   publish:
