@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "aegis-cli"
+name = "aegis-devin"
 version = "2.1.0"
-description = "AI-driven autonomous penetration testing platform — unifies recon, vulnerability scanning, exploitation, and reporting into one CLI. Real agentic decision-making, not scripted automation. 100% free and open source."
+description = "Aegis-Devin: AI-driven autonomous penetration testing & network forensics platform. Autonomous red team, AI network forensics, CVE exploitation, MITRE ATT&CK mapping — one CLI. 100% free & open source."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -13,15 +13,28 @@ authors = [
   { name = "Chandan Pandey" }
 ]
 keywords = [
-  "security", "pentest", "penetration-testing", "offensive-security",
-  "ai", "autonomous", "agentic", "llm", "machine-learning",
-  "recon", "reconnaissance", "vulnerability-scanner", "exploit",
+  "aegis-devin", "aegis", "devin", "ai-pentest", "autonomous-penetration-testing",
+  "network-forensics", "ai-network-forensics", "autonomous-red-team",
+  "ai-red-teaming", "penetration-testing", "offensive-security",
+  "ai-security", "agentic-security", "llm-security", "ai-hacking",
+  "autonomous-hacking", "ai-vulnerability-scanner", "ai-exploit",
+  "network-security-monitor", "packet-analysis", "traffic-analysis",
+  "recon", "reconnaissance", "subdomain-enumeration", "osint",
+  "vulnerability-scanner", "exploit", "post-exploitation",
   "metasploit", "nuclei", "nmap", "sqlmap", "burp-suite",
-  "cve", "sarif", "github-code-scanning", "ci-cd",
-  "red-team", "ctf", "bug-bounty", "web-security", "network-security",
-  "active-directory", "bloodhound", "cloud-security", "aws", "azure", "gcp",
-  "ssrf", "xxe", "xss", "sqli", "http-smuggling", "oob",
+  "cve", "cvss", "sarif", "github-code-scanning", "ci-cd-security",
+  "red-team", "red-teaming", "ctf", "bug-bounty",
+  "web-security", "api-security", "web-application-firewall", "waf-bypass",
+  "active-directory", "bloodhound", "kerberoasting", "lateral-movement",
+  "cloud-security", "aws-security", "azure-security", "gcp-security",
+  "ssrf", "xxe", "xss", "sqli", "http-smuggling", "oob-detection",
+  "lfi", "rce", "command-injection", "sql-injection",
+  "kali-linux", "kali", "parrot-os", "linux-security",
   "cli", "python", "automation", "devops", "devsecops",
+  "mitre-attack", "mitre-attck", "threat-intelligence", "ioc",
+  "pcap", "wireshark", "zeek", "bro", "network-monitor",
+  "zero-day", "exploit-framework", "security-automation",
+  "groq", "nvidia-nim", "llm7", "free-ai-api",
 ]
 classifiers = [
   "Programming Language :: Python :: 3",
@@ -78,11 +91,11 @@ aegis = "aegis.__main__:cli"
 aegis-mcp = "aegis.mcp_server:main"
 
 [project.urls]
-Homepage = "https://github.com/thecnical/aegis"
-Documentation = "https://github.com/thecnical/aegis/wiki"
-Source = "https://github.com/thecnical/aegis"
-"Bug Tracker" = "https://github.com/thecnical/aegis/issues"
-Changelog = "https://github.com/thecnical/aegis/releases"
+Homepage = "https://github.com/thecnical/aegis-devin"
+Documentation = "https://github.com/thecnical/aegis-devin/wiki"
+Source = "https://github.com/thecnical/aegis-devin"
+"Bug Tracker" = "https://github.com/thecnical/aegis-devin/issues"
+Changelog = "https://github.com/thecnical/aegis-devin/releases"
 
 [tool.setuptools]
 include-package-data = true

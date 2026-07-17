@@ -1,46 +1,55 @@
 <p align="center">
-  <img src="assets/aegis_whitepaper_mockup.png" alt="Aegis Platform Banner" width="100%">
+  <img src="assets/aegis_whitepaper_mockup.png" alt="Aegis-Devin Platform Banner" width="100%">
 </p>
 
 <div align="center">
 
 ```
- ░█████╗░███████╗░██████╗░██╗░██████╗
- ██╔══██╗██╔════╝██╔════╝░██║██╔════╝
- ███████║█████╗░░██║░░██╗░██║╚█████╗░
- ██╔══██║██╔══╝░░██║░░╚██╗██║░╚═══██╗
- ██║░░██║███████╗╚██████╔╝██║██████╔╝
- ╚═╝░░╚═╝╚══════╝░╚═════╝░╚═╝╚═════╝
+ ░█████╗░███████╗░██████╗░██╗░██████╗    ██████╗░███████╗██╗░░░██╗██╗███╗░░██╗
+ ██╔══██╗██╔════╝██╔════╝░██║██╔════╝    ██╔══██╗██╔════╝██║░░░██║██║████╗░██║
+ ███████║█████╗░░██║░░██╗░██║╚█████╗░    ██║░░██║█████╗░░╚██╗░██╔╝██║██╔██╗██║
+ ██╔══██║██╔══╝░░██║░░╚██╗██║░╚═══██╗    ██║░░██║██╔══╝░░░╚████╔╝░██║██║╚████║
+ ██║░░██║███████╗╚██████╔╝██║██████╔╝    ██████╔╝███████╗░░╚██╔╝░░██║██║░╚███║
+ ╚═╝░░╚═╝╚══════╝░╚═════╝░╚═╝╚═════╝    ╚═════╝░╚══════╝░░░╚═╝░░░╚═╝╚═╝░░╚══╝
 ```
 
-### ⚔ AI-Driven Autonomous Penetration Testing Platform ⚔
+### ⚔ Aegis-Devin — AI Autonomous Penetration Testing + Network Forensics Platform ⚔
 
-> *One command. Every phase. Real agentic intelligence.*
+> *One command. Every phase. Real agentic AI intelligence.*
+> *World's most advanced autonomous red team + network forensics CLI.*
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge)](LICENSE)
-[![CI](https://github.com/thecnical/aegis/actions/workflows/ci.yml/badge.svg?style=for-the-badge)](https://github.com/thecnical/aegis/actions)
-[![Version](https://img.shields.io/badge/Version-2.1.0-blueviolet?style=for-the-badge)](https://github.com/thecnical/aegis/releases)
+[![CI](https://github.com/thecnical/aegis-devin/actions/workflows/ci.yml/badge.svg?style=for-the-badge)](https://github.com/thecnical/aegis-devin/actions)
+[![Version](https://img.shields.io/badge/Version-2.1.0-blueviolet?style=for-the-badge)](https://github.com/thecnical/aegis-devin/releases)
 [![Platform](https://img.shields.io/badge/Platform-Kali%20Linux-557C94?style=for-the-badge&logo=linux&logoColor=white)](https://kali.org)
+[![PyPI](https://img.shields.io/badge/PyPI-aegis--devin-blue?style=for-the-badge&logo=pypi)](https://pypi.org/project/aegis-devin/)
 
 [![Ruff](https://img.shields.io/badge/code%20style-ruff-orange?style=flat-square)](https://github.com/astral-sh/ruff)
 [![mypy](https://img.shields.io/badge/type--checked-mypy-blue?style=flat-square)](https://mypy-lang.org)
-[![PyPI](https://img.shields.io/badge/PyPI-aegis--cli-blue?style=flat-square&logo=pypi)](https://pypi.org/project/aegis-cli/)
 [![Security](https://img.shields.io/badge/security-bandit-yellow?style=flat-square)](https://github.com/PyCQA/bandit)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=flat-square&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/chandanpandit)
 
 ---
 
 ```
-  ┌─ 15+ Attack Modules  ·  10+ WAF Vendors  ·  100% Free & Open Source ─┐
-  │  Recon → Vuln → Exploit → Post → Report                               │
-  │  AI selects tools. AI reads output. AI decides next.                   │
-  └────────────────────────────────────────────────────────────────────────┘
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │  Aegis-Devin  ·  AI Autonomous Pentest  ·  Network Forensics  ·  Free  │
+  │  Recon → Vuln → Exploit → Post → Forensics → Report                    │
+  │  AI selects tools. AI reads output. AI decides next. AI writes report.  │
+  │  15+ Attack Modules  ·  10+ WAF Vendors  ·  100% Free & Open Source    │
+  └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```bash
-# Full autonomous pentest — one command
+# Full autonomous AI pentest — one command
 aegis ai auto --target example.com --full --format html
+
+# AI-driven network forensics — capture + analyze + report
+aegis forensics capture --interface eth0 --ai-analyze
+
+# Autonomous red team against internal network
+aegis forensics redteam --target 192.168.1.0/24 --full
 ```
 
 > **Legal Notice:** For authorized penetration testing and security research only.
@@ -197,7 +206,7 @@ Explore the theoretical and tactical foundations of Aegis through our dedicated 
 Installs everything: apt packages, Go, Rust, subfinder, nuclei, trufflehog, gowitness, amass, feroxbuster, webtech, and Aegis itself.
 
 ```bash
-git clone https://github.com/thecnical/aegis.git
+git clone https://github.com/thecnical/aegis-devin.git
 cd aegis
 sudo bash install.sh
 ```
@@ -271,7 +280,7 @@ sudo apt install -y python3-pip python3-venv git \
 **2. Clone and create a virtual environment**
 
 ```bash
-git clone https://github.com/thecnical/aegis.git
+git clone https://github.com/thecnical/aegis-devin.git
 cd aegis
 python3 -m venv .venv
 source .venv/bin/activate
@@ -301,8 +310,8 @@ aegis install-tools --yes
 ### Option 3 — PyPI
 
 ```bash
-pip install aegis-cli
-pip install "aegis-cli[mcp]"   # include MCP server support
+pip install aegis-devin
+pip install "aegis-devin[mcp]"   # include MCP server support
 pip install -e ".[dev]"        # development dependencies
 ```
 
@@ -966,7 +975,7 @@ aegis uninstall --yes --remove-data --remove-config    # full clean
 ## Development
 
 ```bash
-git clone https://github.com/thecnical/aegis.git
+git clone https://github.com/thecnical/aegis-devin.git
 cd aegis
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"

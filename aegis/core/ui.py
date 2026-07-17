@@ -23,13 +23,13 @@ VERSION = "2.1.0"
 # ── Landscape banner — ASCII art LEFT, info RIGHT, full width, centered ───────
 
 _BANNER = """\
-[bold bright_green]░█████╗░███████╗░██████╗░██╗░██████╗[/bold bright_green]   [bold white]AI-Driven Autonomous Penetration Testing[/bold white]
-[bold bright_green]██╔══██╗██╔════╝██╔════╝░██║██╔════╝[/bold bright_green]   [dim white]────────────────────────────────────────[/dim white]
-[bold bright_green]███████║█████╗░░██║░░██╗░██║╚█████╗░[/bold bright_green]   [bold bright_cyan]recon[/bold bright_cyan] [dim white]·[/dim white] [bold bright_cyan]vuln[/bold bright_cyan] [dim white]·[/dim white] [bold bright_cyan]exploit[/bold bright_cyan] [dim white]·[/dim white] [bold bright_cyan]post[/bold bright_cyan] [dim white]·[/dim white] [bold bright_cyan]ai[/bold bright_cyan] [dim white]·[/dim white] [bold bright_cyan]report[/bold bright_cyan]
-[bold bright_green]██╔══██║██╔══╝░░██║░░╚██╗██║░╚═══██╗[/bold bright_green]   [dim white]15+ modules  ·  10+ WAF vendors  ·  100% free[/dim white]
-[bold bright_green]██║░░██║███████╗╚██████╔╝██║██████╔╝[/bold bright_green]   [dim white]────────────────────────────────────────[/dim white]
+[bold bright_green]░█████╗░███████╗░██████╗░██╗░██████╗[/bold bright_green]   [bold white]Aegis-Devin · AI Autonomous Pentest + Network Forensics[/bold white]
+[bold bright_green]██╔══██╗██╔════╝██╔════╝░██║██╔════╝[/bold bright_green]   [dim white]────────────────────────────────────────────────────────[/dim white]
+[bold bright_green]███████║█████╗░░██║░░██╗░██║╚█████╗░[/bold bright_green]   [bold bright_cyan]recon[/bold bright_cyan] [dim white]·[/dim white] [bold bright_cyan]vuln[/bold bright_cyan] [dim white]·[/dim white] [bold bright_cyan]exploit[/bold bright_cyan] [dim white]·[/dim white] [bold bright_cyan]post[/bold bright_cyan] [dim white]·[/dim white] [bold bright_cyan]forensics[/bold bright_cyan] [dim white]·[/dim white] [bold bright_cyan]ai[/bold bright_cyan] [dim white]·[/dim white] [bold bright_cyan]report[/bold bright_cyan]
+[bold bright_green]██╔══██║██╔══╝░░██║░░╚██╗██║░╚═══██╗[/bold bright_green]   [dim white]15+ modules  ·  10+ WAF vendors  ·  AI network forensics[/dim white]
+[bold bright_green]██║░░██║███████╗╚██████╔╝██║██████╔╝[/bold bright_green]   [dim white]────────────────────────────────────────────────────────[/dim white]
 [bold bright_green]╚═╝░░╚═╝╚══════╝░╚═════╝░╚═╝╚═════╝[/bold bright_green]   [bold yellow]$ aegis ai auto --target <host> --full[/bold yellow]
-[dim green]                                      [/dim green]   [dim white]v{ver}  ·  MIT  ·  github.com/thecnical/aegis[/dim white]
+[dim green]                                      [/dim green]   [dim white]v{ver}  ·  MIT  ·  github.com/thecnical/aegis-devin[/dim white]
 [dim green]⚔  One command. Every phase. Real AI. [/dim green]   [dim white]Author: Chandan Pandey  ·  ☕ buymeacoffee.com/chandanpandit[/dim white]"""
 
 

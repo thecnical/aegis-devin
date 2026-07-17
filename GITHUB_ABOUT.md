@@ -1,56 +1,38 @@
-# GitHub Repository About Section
+# Aegis-Devin — AI Autonomous Penetration Testing + Network Forensics
 
-Copy this text into the GitHub repository "About" section (Settings → General → Description):
+**The world's most advanced AI-driven autonomous penetration testing and network forensics platform.**
 
----
+Aegis-Devin is a fully autonomous, AI-powered offensive security CLI that unifies every phase of a penetration test and network forensic investigation into a single tool — powered by Groq, NVIDIA NIM, LLM7, and Cloudflare AI (all free tiers).
 
-**Description:**
+## What makes Aegis-Devin unique
 
-AI-driven autonomous penetration testing platform — unifies recon, vulnerability scanning, exploitation, and reporting into one CLI. Real agentic decision-making, not scripted automation. 100% free and open source.
+- **Autonomous AI Red Team** — AI runs the full OODA loop: observe → orient → decide → act → report. No human needed.
+- **AI Network Forensics** — live packet capture, protocol reconstruction, ML anomaly detection, MITRE ATT&CK mapping
+- **Multi-Provider Free AI** — Groq (750 tokens/sec), NVIDIA NIM (100+ models), LLM7 (no registration), Cloudflare Workers AI
+- **Zero manual steps** — from `aegis ai auto --target <host>` to a full HTML pentest report with findings, CVEs, and remediation
+- **100% Free** — no paid subscriptions, no credit card, no paid tools required
 
----
+## Key capabilities
 
-**Website:**
+| Module | What it does |
+|---|---|
+| `aegis ai auto` | Full autonomous pentest: recon → vuln → exploit → post → report |
+| `aegis forensics capture` | Live network capture with AI anomaly detection |
+| `aegis forensics redteam` | Autonomous internal network red team with AI OODA loop |
+| `aegis recon domain` | Subdomain enum, Shodan, tech fingerprint, OSINT |
+| `aegis vuln web` | Nuclei + feroxbuster + HTTP evidence capture |
+| `aegis exploit msf` | Auto-map findings to Metasploit modules |
+| `aegis report generate` | AI-written PDF/HTML pentest report |
 
-https://github.com/thecnical/aegis
+## Install
 
----
+```bash
+pip install aegis-devin
+# or
+git clone https://github.com/thecnical/aegis-devin.git && cd aegis-devin
+sudo bash install.sh
+```
 
-**Topics (tags):**
+## GitHub Topics
 
-penetration-testing, security, offensive-security, ai, autonomous, agentic, llm, recon, vulnerability-scanner, exploit, metasploit, nuclei, nmap, burp-suite, cve, sarif, red-team, bug-bounty, active-directory, bloodhound, cloud-security, aws, azure, gcp, ssrf, xxe, http-smuggling, oob, cli, python, automation, devsecops
-
----
-
-## For CEO/Investor Pitch:
-
-**Elevator Pitch:**
-
-Aegis is the first truly autonomous penetration testing platform powered by AI. Unlike traditional security tools that require manual configuration and expert knowledge, Aegis uses large language models to make real-time decisions during security assessments — selecting tools, analyzing findings, and adapting its approach based on what it discovers.
-
-**Market Position:**
-
-- **Problem**: Security teams spend 70% of their time on repetitive recon and scanning tasks
-- **Solution**: Aegis automates the entire pentest lifecycle with AI-driven decision-making
-- **Differentiation**: Real agentic behavior (not just scripted automation) — the AI actually reads service banners, selects appropriate exploits, and adapts based on findings
-- **Business Model**: 100% open source (MIT license) — monetization via enterprise support, managed cloud service, or team collaboration features
-
-**Technical Moat:**
-
-1. **Real agentic loop** — no other tool has AI that actually parses tool output and makes decisions
-2. **Unified data model** — every tool writes to the same database with structured evidence
-3. **15+ integrated attack modules** — Metasploit, BloodHound, cloud discovery, OOB detection
-4. **Production-ready** — PostgreSQL support, workspace isolation, SARIF export for CI/CD
-
-**Traction:**
-
-- 2 GitHub stars (early stage)
-- 24 commits in 3 weeks
-- Zero paid dependencies — entire stack is free
-- Kali Linux compatible — targets the 3M+ security professionals using Kali
-
-**Ask:**
-
-- Seed funding for full-time development
-- Enterprise features: team collaboration, managed cloud service, compliance reporting
-- Go-to-market: security conference talks, bug bounty platform partnerships
+`penetration-testing` `ai-security` `network-forensics` `autonomous-red-team` `ai-pentest` `kali-linux` `nmap` `nuclei` `metasploit` `offensive-security` `red-team` `bug-bounty` `ctf` `mitre-attack` `ai-hacking` `network-security` `vulnerability-scanner` `python` `cli` `devsecops`
