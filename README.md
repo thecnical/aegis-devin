@@ -21,7 +21,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge)](LICENSE)
 [![CI](https://github.com/thecnical/aegis-devin/actions/workflows/ci.yml/badge.svg?style=for-the-badge)](https://github.com/thecnical/aegis-devin/actions)
-[![Version](https://img.shields.io/badge/Version-2.1.0-blueviolet?style=for-the-badge)](https://github.com/thecnical/aegis-devin/releases)
+[![Version](https://img.shields.io/badge/Version-2.2.0-blueviolet?style=for-the-badge)](https://github.com/thecnical/aegis-devin/releases)
 [![Platform](https://img.shields.io/badge/Platform-Kali%20Linux-557C94?style=for-the-badge&logo=linux&logoColor=white)](https://kali.org)
 [![PyPI](https://img.shields.io/badge/PyPI-aegis--devin-blue?style=for-the-badge&logo=pypi)](https://pypi.org/project/aegis-devin/)
 

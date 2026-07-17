@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aegis-devin"
-version = "2.1.0"
+version = "2.2.0"
 description = "Aegis-Devin: AI-driven autonomous penetration testing & network forensics platform. Autonomous red team, AI network forensics, CVE exploitation, MITRE ATT&CK mapping — one CLI. 100% free & open source."
 readme = "README.md"
 requires-python = ">=3.10"
