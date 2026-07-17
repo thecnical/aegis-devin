@@ -32,6 +32,9 @@ NEW_TABLES = [
     "finding_hashes",
     "ai_results",
     "scan_sessions",
+    "workflow_runs",
+    "workflow_events",
+    "audit_logs",
 ]
 
 
@@ -188,3 +191,14 @@ def test_get_session_findings(db: DatabaseManager) -> None:
     results = db.get_session_findings(sid)
     assert len(results) == 1
     assert results[0]["id"] == fid
+
+
+def test_api_token_hardening_roundtrip(db: DatabaseManager) -> None:
+    token_id = db.add_api_token("hash123", "aeg_xxx", "ci")
+    assert token_id > 0
+    row = db.get_api_token_by_hash("hash123")
+    assert row is not None
+    db.touch_api_token(token_id)
+    row2 = db.get_api_token_by_hash("hash123")
+    assert row2 is not None
+    assert row2["last_used"] is not None

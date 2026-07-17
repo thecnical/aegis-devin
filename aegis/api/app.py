@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import hashlib
 import uuid
 from pathlib import Path
 from typing import Any, Optional
@@ -67,12 +68,21 @@ def configure(config: ConfigManager, db: DatabaseManager) -> None:
 # ── Auth ───────────────────────────────────────────────────────────────────────
 
 def _verify_api_key(x_api_key: Optional[str] = Header(default=None)) -> None:
-    """Optional API key authentication. Skipped if no key is configured."""
+    """Optional API key authentication with hardened token support."""
+    db = _get_db()
+    if x_api_key:
+        token_hash = hashlib.sha256(x_api_key.encode("utf-8")).hexdigest()
+        token_row = db.get_api_token_by_hash(token_hash)
+        if token_row:
+            db.touch_api_token(int(token_row["id"]))
+            db.add_audit_log("api", "token", "api_auth_success", str(token_row.get("token_prefix", "")))
+            return
     cfg = _get_config()
     configured_key = cfg.get("api.key", None)
     if not configured_key:
         return  # No key configured — open access
     if x_api_key != configured_key:
+        db.add_audit_log("api", "token", "api_auth_failed", "legacy_api_key")
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 

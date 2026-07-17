@@ -69,7 +69,8 @@ def _filter_by_severity(items: List[dict], min_severity: Optional[str]) -> List[
     if not min_severity:
         return items
     threshold = SEVERITY_RANK.get(min_severity.lower(), 0)
-    return [i for i in items if SEVERITY_RANK.get(str(i.get("severity", "info")).lower(), 0) >= threshold]
+    filtered = [i for i in items if SEVERITY_RANK.get(str(i.get("severity", "info")).lower(), 0) >= threshold]
+    return sorted(filtered, key=lambda i: (-SEVERITY_RANK.get(str(i.get("severity", "info")).lower(), 0), str(i.get("title", ""))))
 
 
 def render_report_pdf(html: str) -> bytes:
@@ -138,8 +139,13 @@ def render_report(
         for v in fv
     ]
     findings: List[str] = []
+    technical_findings: List[str] = []
     for f in ff:
         findings.append(f"{f.get('title')} ({f.get('severity')}) [{f.get('source')}]: {f.get('description')}")
+        technical_findings.append(
+            f"{f.get('title')} | confidence={f.get('confidence_score', 'n/a')} | "
+            f"repro={f.get('reproducibility', '')} | remediation={f.get('remediation', '')}"
+        )
         for ev_path in evidence_paths.get(int(f.get("id", 0)), []):
             findings.append(f"Evidence: {ev_path}")
 
@@ -180,6 +186,7 @@ def render_report(
         services=_format_section("Services", services),
         vulns=_format_section("Vulnerabilities", vulns),
         findings=_format_section("Findings", findings),
+        technical_findings=_format_section("Technical Findings", technical_findings),
         risk_summary=_format_section("Risk Summary", risk_summary),
         top_criticals=_format_section("Top Criticals", criticals[:10]),
         custom_sections="\n\n".join(custom_blocks),
@@ -223,8 +230,13 @@ def render_report_html(
         for v in fv
     ]
     findings: List[str] = []
+    technical_findings: List[str] = []
     for f in ff:
         findings.append(f"{f.get('title')} ({f.get('severity')}) [{f.get('source')}]: {f.get('description')}")
+        technical_findings.append(
+            f"{f.get('title')} | confidence={f.get('confidence_score', 'n/a')} | "
+            f"repro={f.get('reproducibility', '')} | remediation={f.get('remediation', '')}"
+        )
         for ev_path in evidence_paths.get(int(f.get("id", 0)), []):
             findings.append(f"Evidence: {ev_path}")
 
@@ -266,6 +278,7 @@ def render_report_html(
         services=_format_html_section("Services", services),
         vulns=_format_html_section("Vulnerabilities", vulns),
         findings=_format_html_section("Findings", findings),
+        technical_findings=_format_html_section("Technical Findings", technical_findings),
         risk_summary=_format_html_section("Risk Summary", risk_summary),
         top_criticals=_format_html_section("Top Criticals", criticals[:10]),
         custom_sections="\n".join(custom_blocks),

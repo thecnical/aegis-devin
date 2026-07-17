@@ -24,6 +24,16 @@ general:
       body: "Add remediation checklist here."
   wordlists_path: "data/wordlists"
   wordlists_repo: "https://github.com/danielmiessler/SecLists.git"
+  team_workspace_enforcement: true
+  ci_deterministic_output: true
+  ci_exit_on_high: true
+
+workflow:
+  workers: 4
+  rate_limit_per_sec: 5
+  retries: 1
+  require_cross_validation: false
+  dangerous_checks: false
 
 # ─── API Keys ─────────────────────────────────────────────────────────────────
 # All services below have free tiers — no paid subscription required.
@@ -60,6 +70,25 @@ profiles:
     nmap_args: "-sS -T2 --randomize-hosts"
     nuclei_rate: 20
     ferox_depth: 2
+  web-fast:
+    timeout: 12
+    nmap_args: "-sS -Pn"
+    nuclei_rate: 350
+    ferox_depth: 1
+  web-deep:
+    timeout: 90
+    nmap_args: "-sC -sV -A -O --script=vuln"
+    nuclei_rate: 80
+    ferox_depth: 5
+  api-deep:
+    timeout: 75
+    nmap_args: "-sV -Pn"
+    nuclei_rate: 120
+    ferox_depth: 3
+
+ai:
+  preferred_provider: "auto"
+  default_profile: "web-fast"
 
 # ─── External Tools ───────────────────────────────────────────────────────────
 # Values are the command name (if on PATH) or an absolute path.

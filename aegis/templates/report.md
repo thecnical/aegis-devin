@@ -13,10 +13,16 @@ ${services}
 
 ${vulns}
 
-${findings}
+## Executive Section
 
 ${risk_summary}
 
 ${top_criticals}
+
+## Technical Section
+
+${findings}
+
+${technical_findings}
 
 ${custom_sections}

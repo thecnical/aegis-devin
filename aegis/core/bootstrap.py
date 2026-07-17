@@ -38,7 +38,7 @@ def _real_user() -> Tuple[str, str]:
     sudo_user = os.environ.get("SUDO_USER", "")
     if sudo_user:
         try:
-            pw = pwd.getpwnam(sudo_user)
+            pw = pwd.getpwnam(sudo_user)  # type: ignore[attr-defined]
             return sudo_user, pw.pw_dir
         except KeyError:
             pass
@@ -88,7 +88,7 @@ DATA_DIRS = [
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _is_root() -> bool:
-    return os.geteuid() == 0
+    return os.geteuid() == 0  # type: ignore[attr-defined]
 
 
 def _run(cmd: List[str], env: Optional[Dict[str, str]] = None, timeout: int = 600) -> Tuple[int, str, str]:

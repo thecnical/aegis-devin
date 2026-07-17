@@ -24,7 +24,7 @@ jobs:
       - name: Ruff lint
         run: ruff check .
       - name: Mypy type check
-        run: mypy aegis/ --ignore-missing-imports
+        run: mypy aegis/ --ignore-missing-imports --no-incremental
 
   test:
     name: Tests (Python ${{ matrix.python-version }})

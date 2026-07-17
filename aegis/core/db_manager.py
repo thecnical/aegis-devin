@@ -154,6 +154,13 @@ class DatabaseManager:
                 cvss_vector TEXT,
                 deduplicated INTEGER DEFAULT 0,
                 session_id INTEGER,
+                confidence_score REAL,
+                confidence_rationale TEXT,
+                validation_count INTEGER DEFAULT 0,
+                canonical_hash TEXT,
+                merged_from TEXT,
+                remediation TEXT,
+                reproducibility TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )""",
             """CREATE TABLE IF NOT EXISTS evidence (
@@ -233,10 +240,38 @@ class DatabaseManager:
             )""",
             """CREATE TABLE IF NOT EXISTS api_tokens (
                 id SERIAL PRIMARY KEY,
-                token TEXT UNIQUE NOT NULL,
+                token_hash TEXT UNIQUE NOT NULL,
+                token_prefix TEXT NOT NULL,
                 description TEXT,
+                revoked INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_used TIMESTAMP
+            )""",
+            """CREATE TABLE IF NOT EXISTS workflow_runs (
+                id SERIAL PRIMARY KEY,
+                run_id TEXT UNIQUE NOT NULL,
+                target TEXT NOT NULL,
+                profile TEXT,
+                status TEXT NOT NULL,
+                checkpoint TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
+            """CREATE TABLE IF NOT EXISTS workflow_events (
+                id SERIAL PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                stage TEXT NOT NULL,
+                status TEXT NOT NULL,
+                details TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
+            """CREATE TABLE IF NOT EXISTS audit_logs (
+                id SERIAL PRIMARY KEY,
+                workspace TEXT,
+                actor TEXT NOT NULL,
+                action TEXT NOT NULL,
+                details TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )""",
         ]
 
@@ -250,8 +285,13 @@ class DatabaseManager:
         # SQLite-only: idempotent column migrations (Postgres has them in CREATE TABLE)
         if not self._use_postgres:
             for col_def in ["cvss_score REAL", "cvss_vector TEXT",
-                            "deduplicated INTEGER DEFAULT 0", "session_id INTEGER"]:
+                            "deduplicated INTEGER DEFAULT 0", "session_id INTEGER",
+                            "confidence_score REAL", "confidence_rationale TEXT",
+                            "validation_count INTEGER DEFAULT 0", "canonical_hash TEXT",
+                            "merged_from TEXT", "remediation TEXT", "reproducibility TEXT"]:
                 self._add_column_if_missing(cursor, "findings", col_def)
+            for col_def in ["token_hash TEXT", "token_prefix TEXT", "revoked INTEGER DEFAULT 0"]:
+                self._add_column_if_missing(cursor, "api_tokens", col_def)
 
         conn.commit()
 
@@ -342,14 +382,25 @@ class DatabaseManager:
         category: str,
         description: str,
         source: str,
+        confidence_score: Optional[float] = None,
+        confidence_rationale: Optional[str] = None,
+        validation_count: int = 0,
+        canonical_hash: Optional[str] = None,
+        merged_from: Optional[str] = None,
+        remediation: Optional[str] = None,
+        reproducibility: Optional[str] = None,
     ) -> int:
         cursor = self._cursor()
         self._execute(
             cursor,
             "INSERT INTO findings "
-            "(target_id, host_id, port_id, title, severity, category, description, source) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (target_id, host_id, port_id, title, severity, category, description, source),
+            "(target_id, host_id, port_id, title, severity, category, description, source, confidence_score, confidence_rationale, validation_count, canonical_hash, merged_from, remediation, reproducibility) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                target_id, host_id, port_id, title, severity, category, description, source,
+                confidence_score, confidence_rationale, validation_count, canonical_hash,
+                merged_from, remediation, reproducibility,
+            ),
         )
         self._commit()
         return self._last_id(cursor)
@@ -541,3 +592,89 @@ class DatabaseManager:
         )
         self._commit()
         return self._last_id(cursor)
+
+    # ── Workflow state ────────────────────────────────────────────────────────
+
+    def upsert_workflow_run(
+        self,
+        run_id: str,
+        target: str,
+        profile: str,
+        status: str,
+        checkpoint: Optional[str] = None,
+    ) -> None:
+        cursor = self._cursor()
+        ph = self._placeholder()
+        if self._use_postgres:
+            cursor.execute(
+                "INSERT INTO workflow_runs (run_id, target, profile, status, checkpoint) "
+                "VALUES (%s, %s, %s, %s, %s) "
+                "ON CONFLICT (run_id) DO UPDATE SET "
+                "status = EXCLUDED.status, checkpoint = EXCLUDED.checkpoint, updated_at = CURRENT_TIMESTAMP",
+                (run_id, target, profile, status, checkpoint),
+            )
+        else:
+            cursor.execute(
+                f"INSERT INTO workflow_runs (run_id, target, profile, status, checkpoint, updated_at) "
+                f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP) "
+                f"ON CONFLICT(run_id) DO UPDATE SET "
+                "status = excluded.status, checkpoint = excluded.checkpoint, updated_at = CURRENT_TIMESTAMP",
+                (run_id, target, profile, status, checkpoint),
+            )
+        self._commit()
+
+    def add_workflow_event(self, run_id: str, stage: str, status: str, details: str = "") -> int:
+        cursor = self._cursor()
+        self._execute(
+            cursor,
+            "INSERT INTO workflow_events (run_id, stage, status, details) VALUES (?, ?, ?, ?)",
+            (run_id, stage, status, details),
+        )
+        self._commit()
+        return self._last_id(cursor)
+
+    # ── Audit logs ────────────────────────────────────────────────────────────
+
+    def add_audit_log(self, workspace: str, actor: str, action: str, details: str = "") -> int:
+        cursor = self._cursor()
+        self._execute(
+            cursor,
+            "INSERT INTO audit_logs (workspace, actor, action, details) VALUES (?, ?, ?, ?)",
+            (workspace, actor, action, details),
+        )
+        self._commit()
+        return self._last_id(cursor)
+
+    def list_audit_logs(self, limit: int = 100) -> list:
+        cursor = self._cursor()
+        self._execute(cursor, "SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT ?", (limit,))
+        return self._fetchall_dicts(cursor)
+
+    # ── API token management ──────────────────────────────────────────────────
+
+    def add_api_token(self, token_hash: str, token_prefix: str, description: str = "") -> int:
+        cursor = self._cursor()
+        self._execute(
+            cursor,
+            "INSERT INTO api_tokens (token_hash, token_prefix, description) VALUES (?, ?, ?)",
+            (token_hash, token_prefix, description),
+        )
+        self._commit()
+        return self._last_id(cursor)
+
+    def get_api_token_by_hash(self, token_hash: str) -> Optional[dict]:
+        cursor = self._cursor()
+        self._execute(
+            cursor,
+            "SELECT * FROM api_tokens WHERE token_hash = ? AND (revoked = 0 OR revoked IS NULL)",
+            (token_hash,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        return self._row_to_dict(cursor, row)
+
+    def touch_api_token(self, token_id: int) -> None:
+        cursor = self._cursor()
+        self._execute(cursor, "UPDATE api_tokens SET last_used = CURRENT_TIMESTAMP WHERE id = ?", (token_id,))
+        self._commit()
