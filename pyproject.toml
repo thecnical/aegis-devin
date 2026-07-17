@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aegis-cli"
-version = "2.0.0"
+version = "2.1.0"
 description = "AI-driven autonomous penetration testing platform — unifies recon, vulnerability scanning, exploitation, and reporting into one CLI. Real agentic decision-making, not scripted automation. 100% free and open source."
 readme = "README.md"
 requires-python = ">=3.10"

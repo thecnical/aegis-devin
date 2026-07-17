@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Dict
 
@@ -71,3 +74,56 @@ def get_wordlist_status(dest_path: str) -> Dict[str, str]:
         return {"status": "unknown"}
     data["status"] = "ok"
     return data
+
+
+def self_update_aegis(project_dir: str, dry_run: bool = False) -> Dict[str, str]:
+    """Update Aegis from git (if cloned) or via pip upgrade.
+
+    Returns a dict of component → outcome.
+    """
+    results: Dict[str, str] = {}
+    pdir = Path(project_dir)
+    pip_bin = Path(sys.executable)
+
+    git_dir = pdir / ".git"
+    if git_dir.exists():
+        # Source clone — pull then reinstall
+        if dry_run:
+            console.print("[primary]DRY-RUN[/primary] git pull")
+            results["git-pull"] = "dry-run"
+            console.print("[primary]DRY-RUN[/primary] pip install -e .")
+            results["pip-reinstall"] = "dry-run"
+        else:
+            code, out, err = run_command(["git", "-C", str(pdir), "pull"], timeout=120)
+            results["git-pull"] = "ok" if code == 0 else "failed"
+            if code != 0:
+                console.print(f"[error]git pull failed:[/error] {err or out}")
+            else:
+                console.print(f"[primary]git pull:[/primary] {out.strip() or 'already up-to-date'}")
+
+            code, _, err = run_command(
+                [str(pip_bin), "-m", "pip", "install", "-e", str(pdir), "--quiet"],
+                timeout=180,
+            )
+            results["pip-reinstall"] = "ok" if code == 0 else "failed"
+            if code != 0:
+                console.print(f"[error]pip reinstall failed:[/error] {err}")
+            else:
+                console.print("[primary]pip reinstall:[/primary] ok")
+    else:
+        # Pip installed
+        if dry_run:
+            console.print("[primary]DRY-RUN[/primary] pip install --upgrade aegis-cli")
+            results["pip-upgrade"] = "dry-run"
+        else:
+            code, _, err = run_command(
+                [str(pip_bin), "-m", "pip", "install", "--upgrade", "aegis-cli", "--quiet"],
+                timeout=300,
+            )
+            results["pip-upgrade"] = "ok" if code == 0 else "failed"
+            if code != 0:
+                console.print(f"[error]pip upgrade failed:[/error] {err}")
+            else:
+                console.print("[primary]pip upgrade aegis-cli:[/primary] ok")
+
+    return results

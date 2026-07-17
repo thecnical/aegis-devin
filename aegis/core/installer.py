@@ -10,6 +10,15 @@ from aegis.core.ui import console
 from aegis.core.utils import ensure_dir, run_command, which
 
 
+def _project_dir() -> Path:
+    """Return the Aegis project root, honouring AEGIS_PROJECT_DIR if set."""
+    env = os.environ.get("AEGIS_PROJECT_DIR", "")
+    if env:
+        return Path(env)
+    # Fallback: three levels up from this file (aegis/core/installer.py → project root)
+    return Path(__file__).resolve().parent.parent.parent
+
+
 def _is_linux() -> bool:
     return os.name == "posix"
 
@@ -240,17 +249,33 @@ def run_uninstall(
             console.print(f"[primary]{name}[/primary]: removed")
             results[name] = "ok"
 
+    # Remove system wrapper scripts created by install.sh
+    for wrapper in [Path("/usr/local/bin/aegis"), Path("/usr/local/bin/aegis-mcp")]:
+        if dry_run:
+            console.print(f"[primary]DRY-RUN[/primary] remove wrapper: {wrapper}")
+            results[f"wrapper:{wrapper.name}"] = "dry-run"
+        elif wrapper.exists():
+            try:
+                wrapper.unlink()
+                console.print(f"[primary]wrapper {wrapper.name}[/primary]: removed")
+                results[f"wrapper:{wrapper.name}"] = "ok"
+            except OSError as exc:
+                console.print(f"[warning]Could not remove {wrapper}: {exc}[/warning]")
+                results[f"wrapper:{wrapper.name}"] = "failed"
+
+    project = _project_dir()
+
     if remove_data:
-        data_dir = Path("data")
+        data_dir = project / "data"
         if dry_run:
             console.print(f"[primary]DRY-RUN[/primary] remove data dir: {data_dir}")
         elif data_dir.exists():
-            shutil.rmtree(data_dir, ignore_errors=True)
+            shutil.rmtree(str(data_dir), ignore_errors=True)
             console.print("[primary]data/[/primary]: removed")
         results["data-dir"] = "dry-run" if dry_run else "ok"
 
     if remove_config:
-        cfg = Path("config/config.yaml")
+        cfg = project / "config" / "config.yaml"
         if dry_run:
             console.print(f"[primary]DRY-RUN[/primary] remove config: {cfg}")
         elif cfg.exists():

@@ -1,7 +1,36 @@
 from __future__ import annotations
 
+import os
 import time
+import socket
+import hashlib
+import secrets
+from pathlib import Path
 from typing import Optional
+
+
+def _resolve_project_dir() -> Path:
+    """Return the Aegis project root (where config/config.yaml lives).
+
+    Resolution order:
+    1. AEGIS_PROJECT_DIR env-var (set by __main__.py at startup)
+    2. Directory of main.py itself (source-tree usage)
+    3. CWD (legacy / in-tree invocation)
+    """
+    env = os.environ.get("AEGIS_PROJECT_DIR", "")
+    if env:
+        return Path(env)
+    # main.py is at the project root when running from source
+    here = Path(__file__).resolve().parent
+    if (here / "config" / "config.yaml").exists():
+        return here
+    return Path.cwd()
+
+
+# Absolute paths resolved once at import time so every default= is correct.
+_PROJECT_DIR = _resolve_project_dir()
+_DEFAULT_CONFIG = str(_PROJECT_DIR / "config" / "config.yaml")
+_DEFAULT_LOG = str(_PROJECT_DIR / "data" / "logs" / "aegis.log")
 
 import click
 from rich.table import Table
@@ -31,8 +60,79 @@ from aegis.core.ui import console, show_banner
 from aegis.core.scope_manager import ScopeManager
 from aegis.core.workspace_manager import WorkspaceManager
 from aegis.core.ai_client import AIClient
+from aegis.core.ai_client import MODEL_PREFERENCES
 from aegis.core.notifier import Notifier
 from aegis.core.deduplicator import Deduplicator
+from aegis.core.workflow_engine import WorkflowEngine
+
+def _make_abs(path: str, config_path: str) -> Path:
+    """Convert a relative path to absolute using the config file's directory."""
+    p = Path(path)
+    if p.is_absolute():
+        return p
+    base = Path(config_path).resolve().parent
+    return base / p
+
+
+def _create_default_config(config_path: str) -> None:
+    """Bootstrap a default config.yaml if one doesn't exist yet."""
+    from aegis.core.ui import console as _con
+    dest = Path(config_path)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    template = _PROJECT_DIR / "config" / "config.yaml"
+    if template.exists() and template != dest:
+        import shutil
+        shutil.copy2(str(template), str(dest))
+        _con.print(f"[accent]Created default config:[/accent] {dest}")
+        return
+    # Minimal fallback if template is also missing
+    dest.write_text(
+        "# Aegis auto-generated config\n"
+        "general:\n"
+        "  data_path: data\n"
+        "  db_path: data/aegis.db\n"
+        "  default_timeout: 30\n"
+        "  safe_mode: true\n"
+        "api_keys:\n"
+        "  openrouter: CHANGE_ME\n"
+        "  bytez: CHANGE_ME\n"
+        "  shodan: CHANGE_ME\n"
+        "  nvd: CHANGE_ME\n"
+        "notifications:\n"
+        "  slack_webhook: ''\n"
+        "  discord_webhook: ''\n"
+        "profiles:\n"
+        "  default:\n"
+        "    timeout: 30\n"
+        "    nmap_args: '-sC -sV'\n"
+        "    nuclei_rate: 150\n"
+        "    ferox_depth: 2\n"
+        "external_tools: {}\n",
+        encoding="utf-8",
+    )
+    _con.print(f"[accent]Created minimal default config:[/accent] {dest}")
+
+
+PHASE1_PROFILE_PRESETS: dict[str, dict[str, object]] = {
+    "web-fast": {
+        "timeout": 12,
+        "nmap_args": "-sS -Pn",
+        "nuclei_rate": 350,
+        "ferox_depth": 1,
+    },
+    "web-deep": {
+        "timeout": 90,
+        "nmap_args": "-sC -sV -A -O --script=vuln",
+        "nuclei_rate": 80,
+        "ferox_depth": 5,
+    },
+    "api-deep": {
+        "timeout": 75,
+        "nmap_args": "-sV -Pn",
+        "nuclei_rate": 120,
+        "ferox_depth": 3,
+    },
+}
 
 
 class AegisContext:
@@ -61,9 +161,15 @@ pass_context = click.make_pass_decorator(AegisContext)
 
 
 @click.group()
-@click.option("--config", "config_path", default="config/config.yaml", show_default=True)
-@click.option("--profile", default="default", show_default=True)
-@click.option("--log-file", default="data/logs/aegis.log", show_default=True)
+@click.option("--config", "config_path", default=_DEFAULT_CONFIG, show_default=True,
+              help="Path to config YAML (auto-detected from install location).")
+@click.option(
+    "--profile",
+    default="default",
+    show_default=True,
+    help="Scan profile (legacy: default/fast/deep/stealth; new: web-fast/web-deep/api-deep).",
+)
+@click.option("--log-file", default=_DEFAULT_LOG, show_default=True)
 @click.option("--debug", is_flag=True)
 @click.option("--json", "json_out", is_flag=True)
 @click.option("--json-output", default=None)
@@ -80,12 +186,19 @@ def cli(
     workspace_name: Optional[str],
 ) -> None:
     """Aegis - Modular Offensive Security Platform."""
+    # Ensure log directory exists before setup_logging tries to write it
+    Path(log_file).parent.mkdir(parents=True, exist_ok=True)
     setup_logging(log_file, debug)
     config = ConfigManager(config_path)
+    # Auto-bootstrap a default config if one is missing
+    if not Path(config_path).exists():
+        _create_default_config(config_path)
     config.load()
+    _ensure_phase1_profiles(config)
 
-    # Resolve workspace
-    root_db_path = config.get("general.db_path", "data/aegis.db")
+    # Resolve workspace — make db path absolute relative to project dir
+    _raw_db = config.get("general.db_path", "data/aegis.db")
+    root_db_path = str(_make_abs(_raw_db, config_path))
     root_db = DatabaseManager(root_db_path)
     root_db.init_db()
     ws_mgr = WorkspaceManager(root_db)
@@ -111,6 +224,7 @@ def cli(
         workspace_name=ws.name,
     )
     show_banner(not json_out)
+    _show_first_run_hints(ctx.obj)
 
 
 @cli.result_callback()
@@ -313,6 +427,109 @@ def _get_ai(ctx: AegisContext) -> AIClient:
     return AIClient(ctx.config, ctx.db)
 
 
+def _ensure_phase1_profiles(config: ConfigManager) -> dict[str, dict[str, object]]:
+    config_data = config.load()
+    profiles = config_data.get("profiles", {}) or {}
+    changed = False
+    for profile_name, profile_values in PHASE1_PROFILE_PRESETS.items():
+        if profile_name not in profiles:
+            profiles[profile_name] = dict(profile_values)
+            changed = True
+    if changed:
+        config_data["profiles"] = profiles
+        config.save(config_data)
+    return profiles
+
+
+def _is_configured_secret(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    cleaned = value.strip()
+    return bool(cleaned and cleaned != "CHANGE_ME")
+
+
+def _prompt_ai_onboarding(config: ConfigManager) -> bool:
+    if not click.confirm("Configure AI provider and API keys now?", default=True):
+        return False
+
+    provider = click.prompt(
+        "Preferred AI provider",
+        type=click.Choice(["auto", "bytez", "openrouter"], case_sensitive=False),
+        default="auto",
+        show_choices=True,
+    ).lower()
+    config_data = config.load()
+    ai_cfg = config_data.get("ai", {}) or {}
+    ai_cfg["preferred_provider"] = provider
+    config_data["ai"] = ai_cfg
+    api_keys = config_data.get("api_keys", {}) or {}
+
+    if provider in ("auto", "bytez"):
+        current = str(api_keys.get("bytez", "CHANGE_ME"))
+        if click.confirm("Set/update Bytez API key?", default=not _is_configured_secret(current)):
+            api_keys["bytez"] = click.prompt("Bytez API key", default=current, hide_input=True, show_default=False)
+
+    if provider in ("auto", "openrouter"):
+        current = str(api_keys.get("openrouter", "CHANGE_ME"))
+        if click.confirm("Set/update OpenRouter API key?", default=not _is_configured_secret(current)):
+            api_keys["openrouter"] = click.prompt("OpenRouter API key", default=current, hide_input=True, show_default=False)
+
+    config_data["api_keys"] = api_keys
+    config.save(config_data)
+    return True
+
+
+def _show_first_run_hints(ctx: AegisContext) -> None:
+    config_data = ctx.config.load()
+    ux = config_data.get("ux", {}) or {}
+    if ux.get("first_run_hint_shown"):
+        return
+    console.print(
+        "[accent]First-run hints:[/accent] "
+        "`aegis ai doctor --strict` validates AI readiness, "
+        "`aegis web-assess --target <url>` runs resumable authorized workflows."
+    )
+    ux["first_run_hint_shown"] = True
+    config_data["ux"] = ux
+    ctx.config.save(config_data)
+
+
+def _run_setup_wizard(ctx: AegisContext) -> None:
+    console.print("[accent]Aegis setup wizard (authorized testing only).[/accent]")
+    config_data = ctx.config.load()
+    general = config_data.get("general", {}) or {}
+    profiles = _ensure_phase1_profiles(ctx.config)
+    profile_names = sorted(profiles.keys())
+
+    safe_mode_default = bool(general.get("safe_mode", True))
+    timeout_default = int(general.get("default_timeout", 30))
+    workspace_default = str(general.get("workspace", "default"))
+
+    general["safe_mode"] = click.confirm("Enable safe_mode scope guard?", default=safe_mode_default)
+    general["default_timeout"] = click.prompt("Default command timeout (seconds)", type=int, default=timeout_default)
+    general["workspace"] = click.prompt("Default workspace", default=workspace_default)
+    config_data["general"] = general
+
+    selected_profile = click.prompt(
+        "Default scan profile",
+        type=click.Choice(profile_names, case_sensitive=False),
+        default="web-fast" if "web-fast" in profile_names else profile_names[0],
+        show_choices=True,
+    )
+    ai_cfg = config_data.get("ai", {}) or {}
+    ai_cfg["default_profile"] = selected_profile
+    config_data["ai"] = ai_cfg
+    ctx.config.save(config_data)
+
+    if click.confirm("Run AI onboarding now?", default=True):
+        _prompt_ai_onboarding(ctx.config)
+
+    console.print(
+        "[primary]Wizard complete.[/primary] "
+        f"Use [cyan]aegis --profile {selected_profile} <command>[/cyan] to run with your preferred profile."
+    )
+
+
 @ai_group.command("triage")
 @click.option("--session", "session_id", default=None, type=int)
 @click.option("--finding", "finding_id", default=None, type=int)
@@ -329,7 +546,11 @@ def ai_triage(ctx: AegisContext, session_id: Optional[int], finding_id: Optional
     if not findings:
         console.print("[warning]No findings to triage.[/warning]")
         return
-    prompt = "Triage these security findings and provide remediation advice:\n" + "\n".join(
+    prompt = (
+        "You are assisting authorized red-team validation. "
+        "For each finding provide: likelihood, impact, confidence rationale, and safe remediation.\n"
+        "Return concise markdown bullets only.\n"
+    ) + "\n".join(
         f"- [{f.get('severity','?')}] {f.get('title','?')}: {f.get('description','')[:200]}" for f in findings
     )
     ai = _get_ai(ctx)
@@ -414,6 +635,109 @@ def ai_chat(ctx: AegisContext) -> None:
         except RuntimeError as e:
             console.print(f"[error]{e}[/error]")
             break
+
+
+@ai_group.command("doctor")
+@click.option("--strict", is_flag=True, help="Exit non-zero when required AI config is missing.")
+@pass_context
+def ai_doctor(ctx: AegisContext, strict: bool) -> None:
+    """Validate AI configuration, provider readiness, and fallback coverage."""
+    from urllib.parse import urlparse
+
+    config_data = ctx.config.load()
+    ai_cfg = config_data.get("ai", {}) or {}
+    preferred = str(ai_cfg.get("preferred_provider", "auto")).lower()
+    keys = config_data.get("api_keys", {}) or {}
+    bytez_ready = _is_configured_secret(keys.get("bytez"))
+    openrouter_ready = _is_configured_secret(keys.get("openrouter"))
+
+    endpoint_hosts = {
+        "bytez": urlparse(AIClient.BYTEZ_BASE).hostname or "",
+        "openrouter": urlparse(AIClient.OPENROUTER_BASE).hostname or "",
+    }
+    endpoint_dns: dict[str, bool] = {}
+    for provider, host in endpoint_hosts.items():
+        if not host:
+            endpoint_dns[provider] = False
+            continue
+        try:
+            socket.getaddrinfo(host, 443)
+            endpoint_dns[provider] = True
+        except OSError:
+            endpoint_dns[provider] = False
+
+    task_ready: dict[str, bool] = {}
+    for task, models in MODEL_PREFERENCES.items():
+        ready = False
+        for model in models:
+            provider, _ = model.split("/", 1)
+            if provider == "bytez" and bytez_ready:
+                ready = True
+                break
+            if provider == "openrouter" and openrouter_ready:
+                ready = True
+                break
+        task_ready[task] = ready
+
+    fallback_ready = all(task_ready.values())
+    profiles = config_data.get("profiles", {}) or {}
+    default_profile = str(ai_cfg.get("default_profile", "default"))
+    profile_ready = default_profile in profiles
+    preferred_ready = (
+        (preferred == "auto" and (bytez_ready or openrouter_ready))
+        or (preferred == "bytez" and bytez_ready)
+        or (preferred == "openrouter" and openrouter_ready)
+    )
+    issues: list[str] = []
+    if not preferred_ready:
+        issues.append(f"preferred provider '{preferred}' is not fully configured")
+    if not fallback_ready:
+        issues.append("one or more AI tasks have no configured model fallback")
+    if not profile_ready:
+        issues.append(f"default AI profile '{default_profile}' is missing from config profiles")
+
+    table = Table(title="AI Doctor")
+    table.add_column("Check", style="cyan")
+    table.add_column("Status", style="magenta")
+    table.add_column("Details", style="white")
+    table.add_row("Preferred provider", preferred, "Configured in ai.preferred_provider")
+    table.add_row("Bytez key", "[green]ok[/green]" if bytez_ready else "[yellow]missing[/yellow]", "api_keys.bytez")
+    table.add_row(
+        "OpenRouter key",
+        "[green]ok[/green]" if openrouter_ready else "[yellow]missing[/yellow]",
+        "api_keys.openrouter",
+    )
+    table.add_row(
+        "Bytez endpoint DNS",
+        "[green]ok[/green]" if endpoint_dns["bytez"] else "[yellow]unresolved[/yellow]",
+        endpoint_hosts["bytez"],
+    )
+    table.add_row(
+        "OpenRouter endpoint DNS",
+        "[green]ok[/green]" if endpoint_dns["openrouter"] else "[yellow]unresolved[/yellow]",
+        endpoint_hosts["openrouter"],
+    )
+    table.add_row(
+        "Model fallback readiness",
+        "[green]ready[/green]" if fallback_ready else "[yellow]degraded[/yellow]",
+        f"{sum(1 for ok in task_ready.values() if ok)}/{len(task_ready)} tasks covered",
+    )
+    table.add_row(
+        "Default AI profile",
+        "[green]ok[/green]" if profile_ready else "[yellow]invalid[/yellow]",
+        default_profile,
+    )
+    console.print(table)
+
+    if issues:
+        console.print("[warning]AI doctor found issues:[/warning]")
+        for item in issues:
+            console.print(f" - {item}")
+        console.print("Run [cyan]aegis setup --wizard[/cyan] or [cyan]aegis ai doctor --strict[/cyan] after fixing config.")
+        if strict:
+            raise click.ClickException("AI doctor strict mode failed")
+    else:
+        console.print("[primary]AI configuration looks ready for authorized red-team workflows.[/primary]")
 
 
 @ai_group.command("auto")
@@ -724,6 +1048,51 @@ def run_pipeline(ctx: click.Context, domain: Optional[str], cidr: Optional[str],
     _invoke_pipeline(ctx, domain, cidr, url, target_ip, full_run, report_target)
 
 
+@cli.command("web-assess")
+@click.option("--target", required=True, help="In-scope target URL for authorized assessment.")
+@click.option("--resume-run-id", default=None, help="Resume a previous workflow run id.")
+@click.option("--workers", default=4, show_default=True, type=int)
+@click.option("--rate-limit", default=5, show_default=True, type=int, help="Max requests per second.")
+@click.option("--retries", default=1, show_default=True, type=int)
+@click.option("--require-cross-validation", is_flag=True, help="Do not elevate confidence without corroboration.")
+@click.option("--dangerous-checks", is_flag=True, help="Enable explicit dangerous checks (opt-in only).")
+@click.option("--ci", "ci_mode", is_flag=True, help="Deterministic CI mode with strict exit semantics.")
+@pass_context
+def web_assess_cmd(
+    ctx: AegisContext,
+    target: str,
+    resume_run_id: Optional[str],
+    workers: int,
+    rate_limit: int,
+    retries: int,
+    require_cross_validation: bool,
+    dangerous_checks: bool,
+    ci_mode: bool,
+) -> None:
+    """Resumable orchestration pipeline for authorized web assessments."""
+    ctx.scope.validate_or_abort(target)
+    engine = WorkflowEngine(
+        db=ctx.db,
+        workspace=ctx.workspace_name,
+        profile=ctx.profile,
+        workers=workers,
+        rate_limit_per_sec=rate_limit,
+        retries=retries,
+        require_cross_validation=require_cross_validation,
+        dangerous_checks=dangerous_checks,
+    )
+    result = engine.run(target=target, resume_run_id=resume_run_id)
+    state = result.get("state", {})
+    finding_count = len(state.get("findings", []))
+    critical_or_high = sum(1 for f in state.get("findings", []) if str(f.get("severity", "")).lower() in {"critical", "high"})
+    console.print(f"[primary]Workflow complete:[/primary] run_id={result.get('run_id')} findings={finding_count}")
+    if ci_mode:
+        if critical_or_high > 0:
+            raise click.ClickException(f"CI gate failed: {critical_or_high} high/critical findings")
+        if state.get("errors"):
+            raise click.ClickException("CI gate failed: workflow contained stage errors")
+
+
 # ─── setup / update ───────────────────────────────────────────────────────────
 
 @cli.command("bootstrap")
@@ -764,9 +1133,21 @@ def bootstrap_cmd(ctx: AegisContext, assume_yes: bool, dry_run: bool, skip_rust:
 @click.option("--dry-run", is_flag=True)
 @click.option("--peas", "include_peas", is_flag=True)
 @click.option("--fix-config", is_flag=True)
+@click.option("--wizard", "wizard_mode", is_flag=True, help="Run first-time interactive setup wizard.")
 @pass_context
-def setup_tools(ctx: AegisContext, assume_yes: bool, dry_run: bool, include_peas: bool, fix_config: bool) -> None:
-    """Install external dependencies."""
+def setup_tools(
+    ctx: AegisContext,
+    assume_yes: bool,
+    dry_run: bool,
+    include_peas: bool,
+    fix_config: bool,
+    wizard_mode: bool,
+) -> None:
+    """Install dependencies or launch guided first-time setup."""
+    if wizard_mode:
+        _run_setup_wizard(ctx)
+        return
+
     ok, reason = validate_environment()
     if not ok:
         console.print(f"[error]Setup not supported:[/error] {reason}")
@@ -785,6 +1166,13 @@ def setup_tools(ctx: AegisContext, assume_yes: bool, dry_run: bool, include_peas
         ctx.config.save(config_data)
     if ctx.json_out:
         emit_json({"setup": results}, ctx.json_output)
+        return
+
+    _ensure_phase1_profiles(ctx.config)
+    if not assume_yes and not dry_run and click.confirm("Configure AI onboarding now?", default=False):
+        configured = _prompt_ai_onboarding(ctx.config)
+        if configured:
+            console.print("[primary]AI onboarding saved to config.[/primary]")
 
 
 @cli.command("install-tools")
@@ -1298,6 +1686,47 @@ def api_serve_cmd(ctx: AegisContext, host: str, port: int) -> None:
         console.print("[error]uvicorn not available. Install with: pip install uvicorn[/error]")
 
 
+# ─── enterprise ───────────────────────────────────────────────────────────────
+
+@cli.group("token")
+def token_group() -> None:
+    """Manage hardened API tokens."""
+
+
+@token_group.command("create")
+@click.option("--description", default="")
+@pass_context
+def token_create(ctx: AegisContext, description: str) -> None:
+    raw = f"aeg_{secrets.token_urlsafe(24)}"
+    token_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    prefix = raw[:12]
+    ctx.db.add_api_token(token_hash, prefix, description)
+    ctx.db.add_audit_log(ctx.workspace_name, "cli", "token_create", prefix)
+    console.print(f"[primary]Token created.[/primary] prefix={prefix}")
+    console.print(f"[warning]Store this token now (shown once):[/warning] {raw}")
+
+
+@cli.group("audit")
+def audit_group() -> None:
+    """Audit log operations."""
+
+
+@audit_group.command("list")
+@click.option("--limit", default=100, type=int, show_default=True)
+@pass_context
+def audit_list(ctx: AegisContext, limit: int) -> None:
+    logs = ctx.db.list_audit_logs(limit=limit)
+    table = Table(title="Audit Logs")
+    table.add_column("Time", style="dim")
+    table.add_column("Workspace", style="cyan")
+    table.add_column("Actor", style="magenta")
+    table.add_column("Action", style="green")
+    table.add_column("Details", style="white")
+    for row in logs:
+        table.add_row(str(row.get("created_at", "")), str(row.get("workspace", "")), str(row.get("actor", "")), str(row.get("action", "")), str(row.get("details", "")))
+    console.print(table)
+
+
 # ─── tool groups ──────────────────────────────────────────────────────────────
 
 @cli.group()
@@ -1353,7 +1782,7 @@ def help_cmd(topic: Optional[str]) -> None:
     t.add_column("Default", style="dim white", min_width=20)
     t.add_column("Description", style="white")
     t.add_row("--config PATH",    "config/config.yaml", "Path to config file")
-    t.add_row("--profile NAME",   "default",            "Scan profile (default/fast/deep/stealth)")
+    t.add_row("--profile NAME",   "default",            "Scan profile (legacy + web-fast/web-deep/api-deep)")
     t.add_row("--workspace NAME", "active workspace",   "Override active workspace for this command")
     t.add_row("--json",           "off",                "Print all output as JSON")
     t.add_row("--json-output FILE","—",                 "Write JSON output to a file")
@@ -1432,8 +1861,13 @@ def help_cmd(topic: Optional[str]) -> None:
     t.add_column("Command", style="bright_cyan", min_width=32)
     t.add_column("What it does", style="white")
     rows = [
+        ("aegis setup --wizard",          "Guided first-time configuration (profiles + optional AI)"),
         ("aegis doctor",                  "Check all tools and API keys are configured"),
         ("aegis doctor --fix",            "Auto-detect tool paths and save to config"),
+        ("aegis ai doctor",               "Validate AI provider keys, endpoint assumptions, and fallback readiness"),
+        ("aegis web-assess --target URL", "Resumable authorized web workflow with checkpoints"),
+        ("aegis token create",            "Create hashed API token for API/CI usage"),
+        ("aegis audit list",              "View audit trail events"),
         ("aegis scope add <target>",      "Add a target to scope (domain/ip/cidr/url)"),
         ("aegis scope list",              "List all in-scope targets"),
         ("aegis workspace create <name>", "Create a new isolated engagement workspace"),
@@ -1461,7 +1895,7 @@ def help_cmd(topic: Optional[str]) -> None:
             "  [bright_cyan]aegis help config[/bright_cyan]     — configuration reference\n"
             "  [bright_cyan]aegis help install[/bright_cyan]    — installation guide\n"
             "  [bright_cyan]aegis help recon[/bright_cyan]      — recon module deep-dive\n"
-            "  [bright_cyan]aegis help ai[/bright_cyan]         — AI features guide",
+            "  [bright_cyan]aegis help ai[/bright_cyan]         — AI features + onboarding diagnostics",
             title="[bold bright_green] Tips [/bold bright_green]",
             border_style="bright_green",
             padding=(0, 2),
@@ -1559,12 +1993,16 @@ def _help_config() -> None:
   fast:     timeout=10, nmap="-sS",     nuclei_rate=300
   deep:     timeout=90, nmap="-sC -sV -A -O --script=vuln"
   stealth:  timeout=120, nmap="-sS -T2 --randomize-hosts"
+  web-fast: timeout=12, nmap="-sS -Pn", nuclei_rate=350
+  web-deep: timeout=90, nmap="-sC -sV -A -O --script=vuln", ferox_depth=5
+  api-deep: timeout=75, nmap="-sV -Pn", nuclei_rate=120
 
 [bold bright_cyan]notifications:[/bold bright_cyan]
   slack_webhook: ""               [dim]# https://api.slack.com/messaging/webhooks[/dim]
   discord_webhook: ""             [dim]# Discord channel webhook URL[/dim]
 
-[bold white]Switch profile:[/bold white]  aegis --profile stealth vuln web https://example.com
+[bold white]Switch profile:[/bold white]  aegis --profile web-deep vuln web https://example.com
+[bold white]Guided setup:[/bold white]    aegis setup --wizard
 [bold white]Auto-detect tools:[/bold white]  aegis doctor --fix
 """)
 
@@ -1670,10 +2108,15 @@ def _help_ai() -> None:
 [bold bright_cyan]aegis ai chat[/bold bright_cyan]
   Interactive AI chat — ask anything about your findings
 
+[bold bright_cyan]aegis ai doctor[/bold bright_cyan]
+  Validate provider key configuration, endpoint DNS assumptions, and model fallback readiness
+  Options: --strict (exit non-zero if degraded)
+
 [bold bright_cyan]AI providers (free tiers):[/bold bright_cyan]
   OpenRouter: https://openrouter.ai/keys
   Bytez:      https://bytez.com
   Add keys to config/config.yaml under api_keys
+  Use [bold]aegis setup --wizard[/bold] for guided onboarding
 """)
 
 
@@ -1750,6 +2193,320 @@ def _help_post() -> None:
   With --forward local:remote_host:remote_port: set up port forward
   Options: --port 1080  --scan  --forward  --timeout
 """)
+
+
+# ─── self-update ──────────────────────────────────────────────────────────────
+
+@cli.command("self-update")
+@click.option("--dry-run", is_flag=True, help="Show what would happen without doing it.")
+@click.option("--pre", is_flag=True, help="Include pre-release versions.")
+@pass_context
+def self_update_cmd(ctx: AegisContext, dry_run: bool, pre: bool) -> None:
+    """Update Aegis itself to the latest version from PyPI or git.
+
+    Detects whether you are running from a git clone (uses git pull +
+    pip install -e .) or from a pip install (uses pip install --upgrade).
+    Also updates nuclei templates and optionally wordlists.
+    """
+    import subprocess as _sp
+    import sys as _sys
+
+    project_dir = _PROJECT_DIR
+    git_dir = project_dir / ".git"
+    pip_bin = Path(_sys.executable)
+
+    console.print("[accent]Aegis self-update starting...[/accent]")
+
+    results: dict[str, str] = {}
+
+    # ── 1. Update Aegis code ─────────────────────────────────────────────────
+    if git_dir.exists():
+        # Running from a git clone — pull latest
+        console.print(f"[dim]Git clone detected at {project_dir}[/dim]")
+        if dry_run:
+            console.print("[primary]DRY-RUN[/primary] git pull")
+            console.print("[primary]DRY-RUN[/primary] pip install -e .")
+            results["git-pull"] = "dry-run"
+            results["pip-reinstall"] = "dry-run"
+        else:
+            code, out, err = run_command(["git", "-C", str(project_dir), "pull"], timeout=120)
+            if code != 0:
+                console.print(f"[error]git pull failed:[/error] {err or out}")
+                results["git-pull"] = "failed"
+            else:
+                console.print(f"[primary]git pull:[/primary] {out.strip() or 'already up-to-date'}")
+                results["git-pull"] = "ok"
+
+            pip_cmd = [str(pip_bin), "-m", "pip", "install", "-e", str(project_dir), "--quiet"]
+            code, out, err = run_command(pip_cmd, timeout=180)
+            if code != 0:
+                console.print(f"[error]pip reinstall failed:[/error] {err or out}")
+                results["pip-reinstall"] = "failed"
+            else:
+                console.print("[primary]pip reinstall:[/primary] ok")
+                results["pip-reinstall"] = "ok"
+    else:
+        # Installed via pip — upgrade from PyPI
+        console.print("[dim]pip install detected — upgrading from PyPI[/dim]")
+        pip_cmd = [str(pip_bin), "-m", "pip", "install", "--upgrade", "aegis-cli"]
+        if pre:
+            pip_cmd.append("--pre")
+        if dry_run:
+            console.print(f"[primary]DRY-RUN[/primary] {' '.join(pip_cmd)}")
+            results["pip-upgrade"] = "dry-run"
+        else:
+            code, out, err = run_command(pip_cmd, timeout=300)
+            if code != 0:
+                console.print(f"[error]pip upgrade failed:[/error] {err or out}")
+                results["pip-upgrade"] = "failed"
+            else:
+                console.print("[primary]pip upgrade:[/primary] ok")
+                results["pip-upgrade"] = "ok"
+
+    # ── 2. Update Nuclei templates ───────────────────────────────────────────
+    nuclei_cmd = str(ctx.config.get("external_tools.nuclei", "nuclei"))
+    if dry_run:
+        console.print(f"[primary]DRY-RUN[/primary] {nuclei_cmd} -update-templates")
+        results["nuclei-templates"] = "dry-run"
+    else:
+        nres = update_nuclei_templates(nuclei_cmd)
+        results["nuclei-templates"] = nres.get("status", "unknown")
+        if nres.get("status") == "ok":
+            console.print("[primary]nuclei templates:[/primary] updated")
+        elif nres.get("status") == "missing":
+            console.print("[warning]nuclei not found — skipping template update[/warning]")
+        else:
+            console.print(f"[warning]nuclei template update failed (non-fatal):[/warning] {nres.get('error', '')}")
+
+    # ── 3. Print summary ─────────────────────────────────────────────────────
+    table = Table(title="Self-Update Summary")
+    table.add_column("Component", style="cyan")
+    table.add_column("Outcome", style="green")
+    outcome_styles = {"ok": "green", "skipped": "yellow", "failed": "red", "dry-run": "blue", "unknown": "dim"}
+    for name, outcome in results.items():
+        style = outcome_styles.get(outcome, "white")
+        table.add_row(name, f"[{style}]{outcome}[/{style}]")
+    console.print(table)
+
+    if not dry_run and all(v in ("ok",) for v in results.values() if v != "dry-run"):
+        console.print("[primary]Aegis is up to date.[/primary]")
+    elif not dry_run:
+        console.print("[warning]Some components may not have updated — see table above.[/warning]")
+
+    if ctx.json_out:
+        emit_json({"self_update": results}, ctx.json_output)
+
+
+# ─── uni (full system uninstall) ──────────────────────────────────────────────
+
+@cli.command("uni")
+@click.option("--yes", "assume_yes", is_flag=True, help="Skip all confirmation prompts.")
+@click.option("--dry-run", is_flag=True, help="Show what would be removed without doing it.")
+@click.option("--keep-data", is_flag=True, help="Keep data/ directory (databases, reports, logs).")
+@click.option("--keep-config", is_flag=True, help="Keep config/config.yaml.")
+@pass_context
+def uni_cmd(ctx: AegisContext, assume_yes: bool, dry_run: bool, keep_data: bool, keep_config: bool) -> None:
+    """Fully uninstall Aegis and ALL installed tools from the system.
+
+    This removes:
+    • The aegis-cli Python package from the active venv
+    • The /usr/local/bin/aegis and /usr/local/bin/aegis-mcp wrapper scripts
+    • Go-installed binaries (subfinder, nuclei, trufflehog, gowitness, amass)
+    • Cargo-installed binaries (feroxbuster)
+    • pip-installed tools (webtech, mcp)
+    • Optionally: data/ directory and config/config.yaml
+    """
+    import shutil as _shutil
+    import sys as _sys
+
+    if not dry_run and not assume_yes:
+        console.print(
+            "[bold red]╔══════════════════════════════════════════╗[/bold red]\n"
+            "[bold red]║  ⚠  FULL AEGIS UNINSTALL                ║[/bold red]\n"
+            "[bold red]╚══════════════════════════════════════════╝[/bold red]\n"
+        )
+        console.print("[bold yellow]This will remove Aegis and ALL installed tools permanently.[/bold yellow]")
+        if not keep_data:
+            console.print("[bold red]  ⚠  data/ directory will be deleted (all databases, reports, logs)[/bold red]")
+        if not keep_config:
+            console.print("[bold red]  ⚠  config/config.yaml will be deleted[/bold red]")
+        console.print()
+        try:
+            answer = input("Type 'yes' to confirm full uninstall: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            console.print("\n[warning]Aborted.[/warning]")
+            return
+        if answer != "yes":
+            console.print("[warning]Uninstall cancelled.[/warning]")
+            return
+
+    results: dict[str, str] = {}
+    pip_bin = Path(_sys.executable)
+    home = Path.home()
+    go_bin = home / "go" / "bin"
+    cargo_bin = home / ".cargo" / "bin"
+
+    def _do(name: str, fn) -> None:  # type: ignore[type-arg]
+        if dry_run:
+            console.print(f"[primary]DRY-RUN[/primary] {name}")
+            results[name] = "dry-run"
+            return
+        try:
+            fn()
+            console.print(f"[primary]{name}[/primary]: removed")
+            results[name] = "ok"
+        except Exception as exc:
+            console.print(f"[warning]{name}:[/warning] {exc}")
+            results[name] = "failed"
+
+    # Pip packages
+    for pkg in ["aegis-cli", "webtech", "mcp"]:
+        cmd = [str(pip_bin), "-m", "pip", "uninstall", "-y", pkg]
+        if dry_run:
+            console.print(f"[primary]DRY-RUN[/primary] {' '.join(cmd)}")
+            results[pkg] = "dry-run"
+        else:
+            code, _, err = run_command(cmd, timeout=60)
+            results[pkg] = "ok" if code == 0 else "failed"
+            console.print(f"[primary]{pkg}[/primary]: {'removed' if code == 0 else err[:60]}")
+
+    # Go tools
+    for tool in ("subfinder", "nuclei", "trufflehog", "gowitness", "amass"):
+        path = go_bin / tool
+        _do(f"go:{tool}", lambda p=path: p.unlink(missing_ok=True))
+
+    # Cargo tools
+    for tool in ("feroxbuster",):
+        path = cargo_bin / tool
+        _do(f"cargo:{tool}", lambda p=path: p.unlink(missing_ok=True))
+
+    # Wrapper scripts
+    for wrapper in ("/usr/local/bin/aegis", "/usr/local/bin/aegis-mcp"):
+        wp = Path(wrapper)
+        _do(f"wrapper:{wrapper}", lambda p=wp: p.unlink(missing_ok=True))
+
+    # Data directory
+    if not keep_data:
+        data_dir = _PROJECT_DIR / "data"
+        if dry_run:
+            console.print(f"[primary]DRY-RUN[/primary] remove data dir: {data_dir}")
+            results["data-dir"] = "dry-run"
+        elif data_dir.exists():
+            _shutil.rmtree(str(data_dir), ignore_errors=True)
+            console.print("[primary]data/[/primary]: removed")
+            results["data-dir"] = "ok"
+
+    # Config
+    if not keep_config:
+        cfg = _PROJECT_DIR / "config" / "config.yaml"
+        if dry_run:
+            console.print(f"[primary]DRY-RUN[/primary] remove config: {cfg}")
+            results["config"] = "dry-run"
+        elif cfg.exists():
+            cfg.unlink()
+            console.print("[primary]config/config.yaml[/primary]: removed")
+            results["config"] = "ok"
+
+    # Summary
+    table = Table(title="Uninstall Summary")
+    table.add_column("Component", style="cyan")
+    table.add_column("Outcome", style="green")
+    outcome_styles = {"ok": "green", "failed": "red", "dry-run": "blue"}
+    for name, outcome in results.items():
+        style = outcome_styles.get(outcome, "white")
+        table.add_row(name, f"[{style}]{outcome}[/{style}]")
+    console.print(table)
+
+    if not dry_run:
+        console.print("[primary]Aegis fully uninstalled. Goodbye.[/primary]")
+        console.print("[dim]You can also delete the project directory manually to remove all remaining files.[/dim]")
+
+    if ctx.json_out:
+        emit_json({"uni": results}, ctx.json_output)
+
+
+# ─── api-key setup ────────────────────────────────────────────────────────────
+
+@cli.command("configure-keys")
+@click.option("--openrouter", default=None, help="OpenRouter API key (free: openrouter.ai/keys).")
+@click.option("--bytez", default=None, help="Bytez API key (free: bytez.com).")
+@click.option("--shodan", default=None, help="Shodan API key (free tier: shodan.io).")
+@click.option("--nvd", default=None, help="NVD API key (free: nvd.nist.gov/developers).")
+@click.option("--slack", default=None, help="Slack webhook URL.")
+@click.option("--discord", default=None, help="Discord webhook URL.")
+@click.option("--interactive", "-i", is_flag=True, help="Prompt for each key interactively.")
+@pass_context
+def configure_keys_cmd(
+    ctx: AegisContext,
+    openrouter: Optional[str],
+    bytez: Optional[str],
+    shodan: Optional[str],
+    nvd: Optional[str],
+    slack: Optional[str],
+    discord: Optional[str],
+    interactive: bool,
+) -> None:
+    """Set API keys and webhooks without manually editing config.yaml.
+
+    Provide keys via flags OR use --interactive for guided prompts.
+
+    All providers have completely free tiers — no credit card required.
+
+    \\b
+    Free key URLs:
+      OpenRouter:  https://openrouter.ai/keys
+      Bytez:       https://bytez.com
+      Shodan:      https://shodan.io (free tier)
+      NVD:         https://nvd.nist.gov/developers/request-an-api-key
+    """
+    config_data = ctx.config.load()
+    api_keys = config_data.get("api_keys", {}) or {}
+    notifications = config_data.get("notifications", {}) or {}
+
+    def _set_key(key_dict: dict, name: str, value: Optional[str], prompt_text: str) -> None:
+        if interactive and value is None:
+            current = str(key_dict.get(name, "CHANGE_ME"))
+            show_current = f" [{current[:8]}...]" if _is_configured_secret(current) else " [not set]"
+            try:
+                entered = input(f"{prompt_text}{show_current}: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                return
+            if entered:
+                key_dict[name] = entered
+        elif value is not None:
+            key_dict[name] = value
+
+    _set_key(api_keys, "openrouter", openrouter, "OpenRouter API key (https://openrouter.ai/keys)")
+    _set_key(api_keys, "bytez", bytez, "Bytez API key (https://bytez.com)")
+    _set_key(api_keys, "shodan", shodan, "Shodan API key")
+    _set_key(api_keys, "nvd", nvd, "NVD API key")
+    _set_key(notifications, "slack_webhook", slack, "Slack webhook URL")
+    _set_key(notifications, "discord_webhook", discord, "Discord webhook URL")
+
+    config_data["api_keys"] = api_keys
+    config_data["notifications"] = notifications
+    ctx.config.save(config_data)
+
+    # Show what's now configured
+    table = Table(title="API Key Status")
+    table.add_column("Service", style="cyan")
+    table.add_column("Configured", style="green")
+    table.add_column("URL", style="dim")
+    key_urls = {
+        "openrouter": "https://openrouter.ai/keys",
+        "bytez": "https://bytez.com",
+        "shodan": "https://shodan.io",
+        "nvd": "https://nvd.nist.gov/developers",
+    }
+    for name, value in api_keys.items():
+        configured = _is_configured_secret(value)
+        table.add_row(
+            str(name),
+            "[green]yes[/green]" if configured else "[yellow]no — run aegis configure-keys[/yellow]",
+            key_urls.get(str(name), ""),
+        )
+    console.print(table)
+    console.print("[primary]Keys saved to config.[/primary] Run [cyan]aegis ai doctor[/cyan] to verify AI readiness.")
 
 
 def register_tools() -> None:

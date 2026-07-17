@@ -20,7 +20,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge)](LICENSE)
 [![CI](https://github.com/thecnical/aegis/actions/workflows/ci.yml/badge.svg?style=for-the-badge)](https://github.com/thecnical/aegis/actions)
-[![Version](https://img.shields.io/badge/Version-2.0.0-blueviolet?style=for-the-badge)](https://github.com/thecnical/aegis/releases)
+[![Version](https://img.shields.io/badge/Version-2.1.0-blueviolet?style=for-the-badge)](https://github.com/thecnical/aegis/releases)
 [![Platform](https://img.shields.io/badge/Platform-Kali%20Linux-557C94?style=for-the-badge&logo=linux&logoColor=white)](https://kali.org)
 
 [![Ruff](https://img.shields.io/badge/code%20style-ruff-orange?style=flat-square)](https://github.com/astral-sh/ruff)
@@ -224,8 +224,34 @@ After install, open a new terminal:
 
 ```bash
 aegis doctor                        # verify all tools are found
+aegis configure-keys --interactive  # set your free API keys (no YAML editing needed)
 aegis ai auto --target example.com  # run your first pentest
 ```
+
+---
+
+## What's New in v2.1.0
+
+### Bugs Fixed
+- **`Config not found: config/config.yaml`** — Aegis now resolves its config using `AEGIS_PROJECT_DIR` (injected by the wrapper script and `__main__.py`). Running `aegis` from any directory — `~`, `/tmp`, anywhere — correctly finds the config.
+- **`0 found, 0 missing` in `aegis doctor`** — was caused by the config not loading. Fixed by the path resolution above.
+- **Log directory creation** — `data/logs/` is now created automatically on first run; no more crash if it's missing.
+- **Config not found spam** — the warning is now printed only once per session instead of on every `get()` call.
+
+### New Commands
+| Command | What it does |
+|---|---|
+| `aegis configure-keys --interactive` | Set API keys interactively — no manual YAML editing needed |
+| `aegis configure-keys --openrouter KEY` | Set a specific key non-interactively (good for CI) |
+| `aegis self-update` | Pull latest code from git (or upgrade via pip) + update nuclei templates |
+| `aegis self-update --dry-run` | Preview what would be updated |
+| `aegis uni --yes` | **Fully** remove Aegis, all Go/Cargo/pip tools, and wrapper scripts from the system |
+| `aegis uni --dry-run` | Preview everything that would be removed |
+
+### Improved
+- `install.sh` wrapper now injects `AEGIS_PROJECT_DIR` and `PATH` (Go/Cargo bins) so all tools are found immediately after opening a new terminal
+- `aegis uninstall` now also removes `/usr/local/bin/aegis` and `/usr/local/bin/aegis-mcp` wrapper scripts
+- First-run hints only shown once (stored in config under `ux.first_run_hint_shown`)
 
 ---
 
@@ -300,6 +326,28 @@ aegis report generate example.com --format html
 # 5. Or do all of the above in one command
 aegis ai auto --target example.com --format html --full
 ```
+
+### Set API keys without editing YAML
+
+```bash
+# Interactive (prompts for each key)
+aegis configure-keys --interactive
+
+# Or set individual keys directly
+aegis configure-keys --openrouter sk-or-...  --bytez btz-...
+
+# Verify AI is ready
+aegis ai doctor
+```
+
+All providers have completely free tiers — no credit card required:
+
+| Service | URL | Used for |
+|---|---|---|
+| OpenRouter | https://openrouter.ai/keys | AI triage, reports, auto mode |
+| Bytez | https://bytez.com | AI triage, reports, auto mode |
+| Shodan | https://shodan.io | OSINT recon |
+| NVD | https://nvd.nist.gov/developers | CVE correlation |
 
 ---
 
@@ -399,6 +447,32 @@ aegis cve correlate --session 1
 
 # 4. Export for CI/CD
 aegis sarif export --session 1 --output results.sarif
+```
+
+### Resumable Authorized Web Workflow (Phase 2-7)
+
+```bash
+# Safe default orchestration: discovery -> fingerprint -> mapping -> checks -> validation -> report prep
+aegis web-assess --target https://example.com
+
+# Resume an interrupted run
+aegis web-assess --target https://example.com --resume-run-id <run-id>
+
+# CI mode (deterministic ordering + strict exit semantics)
+aegis web-assess --target https://example.com --ci --require-cross-validation
+
+# Explicitly enable dangerous probes (opt-in only)
+aegis web-assess --target https://example.com --dangerous-checks
+```
+
+Enterprise controls:
+
+```bash
+# Create hashed API token (shown once)
+aegis token create --description "ci-runner"
+
+# View audit events
+aegis audit list --limit 50
 ```
 
 ### Credential Collection (post-exploitation)
@@ -527,6 +601,18 @@ profiles:
     timeout: 30
     nmap_args: "-sC -sV"
     nuclei_rate: 150
+  web-fast:
+    timeout: 12
+    nmap_args: "-sS -Pn"
+    nuclei_rate: 350
+  web-deep:
+    timeout: 90
+    nmap_args: "-sC -sV -A -O --script=vuln"
+    nuclei_rate: 80
+  api-deep:
+    timeout: 75
+    nmap_args: "-sV -Pn"
+    nuclei_rate: 120
   stealth:
     timeout: 120
     nmap_args: "-sS -T2 --randomize-hosts"
@@ -537,7 +623,9 @@ profiles:
     nuclei_rate: 50
 ```
 
-Switch profiles with `--profile stealth`. All API keys have free tiers — no paid subscriptions required.
+Switch profiles with `--profile web-deep` (new) or legacy profiles like `stealth`.
+For first-time guided config, run `aegis setup --wizard`.
+All API keys have free tiers — no paid subscriptions required.
 
 **Global CLI flags:**
 
@@ -669,11 +757,20 @@ aegis ai summarize --session 1     # executive summary
 aegis ai suggest --target acme.com # attack surface suggestions
 aegis ai report --target acme.com  # generate narrative report section
 aegis ai chat                      # interactive AI chat about findings
+aegis ai doctor                    # validate key/provider/fallback readiness
+aegis ai doctor --strict           # fail CI/scripting if AI is not ready
 ```
 
 ### AI Payload Generation
 
 During `aegis ai auto`, after recon completes, the AI automatically generates targeted payloads (SQLi, XSS, SSRF, LFI, RCE) based on the detected tech stack. Payloads are stored as `medium` severity findings with category `ai-payload`. Uses your free OpenRouter or Bytez key.
+
+### Setup Wizard
+
+```bash
+# Guided first-run flow: base config + profile selection + optional AI onboarding
+aegis setup --wizard
+```
 
 ---
 
@@ -820,7 +917,42 @@ Upload to GitHub Code Scanning via the `github/codeql-action/upload-sarif` actio
 
 ---
 
+## Update
+
+```bash
+# Update Aegis + nuclei templates in one command
+aegis self-update
+
+# Preview without making changes
+aegis self-update --dry-run
+
+# Include pre-release builds (when installed via pip)
+aegis self-update --pre
+```
+
+Detects automatically whether you are running from a git clone (`git pull` + `pip install -e .`) or a pip install (`pip install --upgrade aegis-cli`).
+
+---
+
 ## Uninstall
+
+### Quick uninstall (single command)
+
+```bash
+# Full removal — Aegis, all Go/Cargo/pip tools, wrapper scripts
+aegis uni --yes
+
+# Preview what would be removed (safe, no changes)
+aegis uni --dry-run
+
+# Keep your databases and reports
+aegis uni --yes --keep-data
+
+# Keep both data and config
+aegis uni --yes --keep-data --keep-config
+```
+
+### Granular uninstall
 
 ```bash
 aegis uninstall --dry-run                              # preview only
