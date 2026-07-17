@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-import os
-import time
-import socket
+# ── Standard library imports (must be at top for ruff E402) ──────────────────
 import hashlib
+import os
 import secrets
+import socket
+import time
 from pathlib import Path
 from typing import Optional
+
+# ── Project-root resolution (before any relative imports) ────────────────────
+# This runs at import time to set _PROJECT_DIR / _DEFAULT_CONFIG / _DEFAULT_LOG
+# BEFORE click/aegis imports, so default= values are correct.
 
 
 def _resolve_project_dir() -> Path:
@@ -20,50 +25,49 @@ def _resolve_project_dir() -> Path:
     env = os.environ.get("AEGIS_PROJECT_DIR", "")
     if env:
         return Path(env)
-    # main.py is at the project root when running from source
     here = Path(__file__).resolve().parent
     if (here / "config" / "config.yaml").exists():
         return here
     return Path.cwd()
 
 
-# Absolute paths resolved once at import time so every default= is correct.
 _PROJECT_DIR = _resolve_project_dir()
 _DEFAULT_CONFIG = str(_PROJECT_DIR / "config" / "config.yaml")
 _DEFAULT_LOG = str(_PROJECT_DIR / "data" / "logs" / "aegis.log")
 
-import click
-from rich.table import Table
+# ── Third-party / project imports ────────────────────────────────────────────
+import click  # noqa: E402
+from rich.table import Table  # noqa: E402
 
-from aegis.core.campaigns import (
+from aegis.core.campaigns import (  # noqa: E402
     add_run, create_campaign, diff_runs,
     generate_campaign_report, get_runs, list_campaigns, summarize_db,
 )
-from aegis.core.config_manager import ConfigManager
-from aegis.core.db_manager import DatabaseManager
-from aegis.core.installer import (
+from aegis.core.config_manager import ConfigManager  # noqa: E402
+from aegis.core.db_manager import DatabaseManager  # noqa: E402
+from aegis.core.installer import (  # noqa: E402
     build_install_plan,
     run_install_plan,
     run_install_plan_interactive,
     validate_environment,
     _is_linux as _is_linux_check,
 )
-from aegis.core.logger import setup_logging
-from aegis.core.plugin_loader import discover_manifests, discover_tools
-from aegis.core.updater import (
+from aegis.core.logger import setup_logging  # noqa: E402
+from aegis.core.plugin_loader import discover_manifests, discover_tools  # noqa: E402
+from aegis.core.updater import (  # noqa: E402
     get_wordlist_status, print_update_summary,
     update_nuclei_templates, update_wordlists,
 )
-from aegis.core.tooling import detect_external_tools
-from aegis.core.utils import emit_json
-from aegis.core.ui import console, show_banner
-from aegis.core.scope_manager import ScopeManager
-from aegis.core.workspace_manager import WorkspaceManager
-from aegis.core.ai_client import AIClient
-from aegis.core.ai_client import MODEL_PREFERENCES
-from aegis.core.notifier import Notifier
-from aegis.core.deduplicator import Deduplicator
-from aegis.core.workflow_engine import WorkflowEngine
+from aegis.core.tooling import detect_external_tools  # noqa: E402
+from aegis.core.utils import emit_json, run_command  # noqa: E402
+from aegis.core.ui import console, show_banner  # noqa: E402
+from aegis.core.scope_manager import ScopeManager  # noqa: E402
+from aegis.core.workspace_manager import WorkspaceManager  # noqa: E402
+from aegis.core.ai_client import AIClient  # noqa: E402
+from aegis.core.ai_client import MODEL_PREFERENCES  # noqa: E402
+from aegis.core.notifier import Notifier  # noqa: E402
+from aegis.core.deduplicator import Deduplicator  # noqa: E402
+from aegis.core.workflow_engine import WorkflowEngine  # noqa: E402
 
 def _make_abs(path: str, config_path: str) -> Path:
     """Convert a relative path to absolute using the config file's directory."""
@@ -2208,7 +2212,6 @@ def self_update_cmd(ctx: AegisContext, dry_run: bool, pre: bool) -> None:
     pip install -e .) or from a pip install (uses pip install --upgrade).
     Also updates nuclei templates and optionally wordlists.
     """
-    import subprocess as _sp
     import sys as _sys
 
     project_dir = _PROJECT_DIR
@@ -2318,7 +2321,6 @@ def uni_cmd(ctx: AegisContext, assume_yes: bool, dry_run: bool, keep_data: bool,
     """
     import shutil as _shutil
     import sys as _sys
-
     if not dry_run and not assume_yes:
         console.print(
             "[bold red]╔══════════════════════════════════════════╗[/bold red]\n"

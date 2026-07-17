@@ -5,33 +5,57 @@ import os
 import sys
 from pathlib import Path
 
-# ── Source-tree shim ──────────────────────────────────────────────────────────
-# When running from the cloned repo (python -m aegis or .venv/bin/aegis),
-# main.py lives one level up from this file.  Insert that directory so the
-# bare `from main import cli` below keeps working.
-_repo_root = Path(__file__).parent.parent
-if str(_repo_root) not in sys.path:
-    sys.path.insert(0, str(_repo_root))
+# ── Source-tree / Docker path injection ──────────────────────────────────────
+# When running from a git clone OR Docker WORKDIR /app, main.py lives at the
+# project root. We must add that directory to sys.path so `from main import cli`
+# works regardless of how the package was installed.
+#
+# Candidate roots in priority order:
+#   1. AEGIS_PROJECT_DIR env-var (set by install.sh wrapper)
+#   2. Parent of THIS file's parent (aegis/__main__.py → project root)
+#   3. /app (Docker standard WORKDIR)
+#   4. CWD
 
-# ── Install-location config resolution ───────────────────────────────────────
-# When aegis is installed (pip / install.sh) and the user runs it from any
-# directory, we inject AEGIS_PROJECT_DIR so ConfigManager can find the
-# config/config.yaml that lives next to the original source tree.
-# Priority: env-var override > script-parent heuristic > CWD
+def _find_project_root() -> Path:
+    """Return the directory that contains main.py."""
+    # 1. Explicit env override
+    env = os.environ.get("AEGIS_PROJECT_DIR", "")
+    if env and (Path(env) / "main.py").exists():
+        return Path(env)
+
+    # 2. Relative to this file: aegis/__main__.py → go up two levels
+    candidate = Path(__file__).resolve().parent.parent
+    if (candidate / "main.py").exists():
+        return candidate
+
+    # 3. Docker /app
+    if Path("/app/main.py").exists():
+        return Path("/app")
+
+    # 4. CWD
+    if (Path.cwd() / "main.py").exists():
+        return Path.cwd()
+
+    return candidate  # best guess
+
+
+_root = _find_project_root()
+
+# Inject into sys.path (idempotent)
+if str(_root) not in sys.path:
+    sys.path.insert(0, str(_root))
+
+# ── Set AEGIS_PROJECT_DIR so ConfigManager + log paths resolve correctly ─────
 if not os.environ.get("AEGIS_PROJECT_DIR"):
-    # __file__ is .../site-packages/aegis/__main__.py  OR  .../aegis/__main__.py
-    # Walk up until we find a directory that has config/config.yaml
-    _candidate = Path(__file__).resolve().parent.parent  # repo root when in-tree
-    if (_candidate / "config" / "config.yaml").exists():
-        os.environ["AEGIS_PROJECT_DIR"] = str(_candidate)
+    # Walk up from __file__ to find where config/config.yaml lives
+    for _parent in [_root] + list(Path(__file__).resolve().parents):
+        if (_parent / "config" / "config.yaml").exists():
+            os.environ["AEGIS_PROJECT_DIR"] = str(_parent)
+            break
     else:
-        # Installed package: look for the project dir adjacent to the venv
-        # e.g. /home/user/Desktop/test_tool/aegis/.venv -> /home/user/Desktop/test_tool/aegis
-        for _parent in Path(__file__).resolve().parents:
-            if (_parent / "config" / "config.yaml").exists():
-                os.environ["AEGIS_PROJECT_DIR"] = str(_parent)
-                break
+        os.environ["AEGIS_PROJECT_DIR"] = str(_root)
 
+# ── Import and expose cli ─────────────────────────────────────────────────────
 from main import cli  # noqa: E402
 
 if __name__ == "__main__":

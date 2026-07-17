@@ -108,6 +108,17 @@ aegis = ["tools/**/*.manifest.json", "templates/*.md", "templates/*.html", "web/
 line-length = 100
 target-version = "py310"
 
+[tool.ruff.lint]
+# E402: module-level import not at top — intentional in main.py (project-root
+#        resolution must run before imports to set _DEFAULT_CONFIG/_DEFAULT_LOG)
+# E501: line too long — pre-existing long strings in Rich markup / help text
+# F401: imported but unused — some re-exports are intentional
+extend-select = ["F", "E"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"main.py" = ["E402"]
+
 [tool.mypy]
 python_version = "3.10"
 ignore_missing_imports = true

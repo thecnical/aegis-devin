@@ -23,8 +23,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 RUN pip install --no-cache-dir -e .
 
-# Create data directories
-RUN mkdir -p data/logs data/reports data/evidence data/exports data/screenshots
+# Create data/config directories so aegis can find them
+RUN mkdir -p data/logs data/reports data/evidence data/exports data/screenshots config
+
+# Tell Aegis where the project root is (fixes 'Config not found' in Docker)
+ENV AEGIS_PROJECT_DIR=/app
+
+# Ensure main.py is importable when running as installed package
+ENV PYTHONPATH=/app:${PYTHONPATH}
 
 ENTRYPOINT ["aegis"]
 CMD ["--help"]
