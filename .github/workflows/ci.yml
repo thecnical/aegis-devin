@@ -95,6 +95,10 @@ jobs:
           gh release create "$TAG" \
             --title "Aegis-Devin ${TAG}" \
             --notes-file /tmp/changes.txt \
+            --latest || \
+          gh release edit "$TAG" \
+            --title "Aegis-Devin ${TAG}" \
+            --notes-file /tmp/changes.txt \
             --latest
 
   publish:
